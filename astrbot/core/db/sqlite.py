@@ -6,7 +6,7 @@ from datetime import datetime, timedelta, timezone
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlmodel import col, delete, desc, func, or_, select, text, update
 
-from astrbot.core.db import BaseDatabase
+from astrbot.core.db import BaseDatabase, DatabaseType
 from astrbot.core.db.po import (
     Attachment,
     ConversationV2,
@@ -28,6 +28,8 @@ NOT_GIVEN = T.TypeVar("NOT_GIVEN")
 
 
 class SQLiteDatabase(BaseDatabase):
+    database_type = DatabaseType.SQLITE
+
     def __init__(self, db_path: str) -> None:
         self.db_path = db_path
         self.DATABASE_URL = f"sqlite+aiosqlite:///{db_path}"
@@ -88,12 +90,10 @@ class SQLiteDatabase(BaseDatabase):
         async with self.get_db() as session:
             session: AsyncSession
             result = await session.execute(
-                select(func.count(col(PlatformStat.platform_id))).select_from(
-                    PlatformStat,
-                ),
+                select(func.sum(PlatformStat.count)).select_from(PlatformStat),
             )
             count = result.scalar_one_or_none()
-            return count if count is not None else 0
+            return count or 0
 
     async def get_platform_stats(self, offset_sec: int = 86400) -> list[PlatformStat]:
         """Get platform statistics within the specified offset in seconds and group by platform_id."""
@@ -103,14 +103,46 @@ class SQLiteDatabase(BaseDatabase):
             start_time = now - timedelta(seconds=offset_sec)
             result = await session.execute(
                 text("""
-                SELECT * FROM platform_stats
+                SELECT platform_id, platform_type, SUM(count) as total_count, MAX(timestamp) as latest_ts
+                FROM platform_stats
                 WHERE timestamp >= :start_time
-                GROUP BY platform_id
-                ORDER BY timestamp DESC
+                GROUP BY platform_id, platform_type
+                ORDER BY latest_ts DESC
                 """),
                 {"start_time": start_time},
             )
-            return list(result.scalars().all())
+            rows = result.fetchall()
+            return [
+                PlatformStat(
+                    id=0,
+                    platform_id=row.platform_id,
+                    platform_type=row.platform_type,
+                    count=row.total_count,
+                    timestamp=row.latest_ts,
+                )
+                for row in rows
+            ]
+
+    async def get_platform_stats_time_series(
+        self, offset_sec: int = 86400
+    ) -> list[tuple[int, int]]:
+        """Get platform statistics time series data grouped by hour."""
+        async with self.get_db() as session:
+            session: AsyncSession
+            now = datetime.now()
+            start_time = now - timedelta(seconds=offset_sec)
+            result = await session.execute(
+                text("""
+                SELECT strftime('%s', datetime(timestamp, 'start of hour')) as hour_ts, SUM(count) as total_count
+                FROM platform_stats
+                WHERE timestamp >= :start_time
+                GROUP BY hour_ts
+                ORDER BY hour_ts ASC
+                """),
+                {"start_time": start_time},
+            )
+            rows = result.fetchall()
+            return [(int(row.hour_ts), row.total_count) for row in rows]
 
     # ====
     # Conversation Management
@@ -670,102 +702,6 @@ class SQLiteDatabase(BaseDatabase):
             await session.commit()
 
     # ====
-    # Deprecated Methods
-    # ====
-
-    def get_base_stats(self, offset_sec=86400):
-        """Get base statistics within the specified offset in seconds."""
-
-        async def _inner():
-            async with self.get_db() as session:
-                session: AsyncSession
-                now = datetime.now()
-                start_time = now - timedelta(seconds=offset_sec)
-                result = await session.execute(
-                    select(PlatformStat).where(PlatformStat.timestamp >= start_time),
-                )
-                all_datas = result.scalars().all()
-                deprecated_stats = DeprecatedStats()
-                for data in all_datas:
-                    deprecated_stats.platform.append(
-                        DeprecatedPlatformStat(
-                            name=data.platform_id,
-                            count=data.count,
-                            timestamp=int(data.timestamp.timestamp()),
-                        ),
-                    )
-                return deprecated_stats
-
-        result = None
-
-        def runner():
-            nonlocal result
-            result = asyncio.run(_inner())
-
-        t = threading.Thread(target=runner)
-        t.start()
-        t.join()
-        return result
-
-    def get_total_message_count(self):
-        """Get the total message count from platform statistics."""
-
-        async def _inner():
-            async with self.get_db() as session:
-                session: AsyncSession
-                result = await session.execute(
-                    select(func.sum(PlatformStat.count)).select_from(PlatformStat),
-                )
-                total_count = result.scalar_one_or_none()
-                return total_count if total_count is not None else 0
-
-        result = None
-
-        def runner():
-            nonlocal result
-            result = asyncio.run(_inner())
-
-        t = threading.Thread(target=runner)
-        t.start()
-        t.join()
-        return result
-
-    def get_grouped_base_stats(self, offset_sec=86400):
-        # group by platform_id
-        async def _inner():
-            async with self.get_db() as session:
-                session: AsyncSession
-                now = datetime.now()
-                start_time = now - timedelta(seconds=offset_sec)
-                result = await session.execute(
-                    select(PlatformStat.platform_id, func.sum(PlatformStat.count))
-                    .where(PlatformStat.timestamp >= start_time)
-                    .group_by(PlatformStat.platform_id),
-                )
-                grouped_stats = result.all()
-                deprecated_stats = DeprecatedStats()
-                for platform_id, count in grouped_stats:
-                    deprecated_stats.platform.append(
-                        DeprecatedPlatformStat(
-                            name=platform_id,
-                            count=count,
-                            timestamp=int(start_time.timestamp()),
-                        ),
-                    )
-                return deprecated_stats
-
-        result = None
-
-        def runner():
-            nonlocal result
-            result = asyncio.run(_inner())
-
-        t = threading.Thread(target=runner)
-        t.start()
-        t.join()
-        return result
-
-    # ====
     # Platform Session Management
     # ====
 
@@ -862,3 +798,99 @@ class SQLiteDatabase(BaseDatabase):
                         col(PlatformSession.session_id) == session_id,
                     ),
                 )
+
+    # ====
+    # Deprecated Methods
+    # ====
+
+    def get_base_stats(self, offset_sec=86400):
+        """Get base statistics within the specified offset in seconds."""
+
+        async def _inner():
+            async with self.get_db() as session:
+                session: AsyncSession
+                now = datetime.now()
+                start_time = now - timedelta(seconds=offset_sec)
+                result = await session.execute(
+                    select(PlatformStat).where(PlatformStat.timestamp >= start_time),
+                )
+                all_datas = result.scalars().all()
+                deprecated_stats = DeprecatedStats()
+                for data in all_datas:
+                    deprecated_stats.platform.append(
+                        DeprecatedPlatformStat(
+                            name=data.platform_id,
+                            count=data.count,
+                            timestamp=int(data.timestamp.timestamp()),
+                        ),
+                    )
+                return deprecated_stats
+
+        result = None
+
+        def runner():
+            nonlocal result
+            result = asyncio.run(_inner())
+
+        t = threading.Thread(target=runner)
+        t.start()
+        t.join()
+        return result
+
+    def get_total_message_count(self):
+        """Get the total message count from platform statistics."""
+
+        async def _inner():
+            async with self.get_db() as session:
+                session: AsyncSession
+                result = await session.execute(
+                    select(func.sum(PlatformStat.count)).select_from(PlatformStat),
+                )
+                total_count = result.scalar_one_or_none()
+                return total_count if total_count is not None else 0
+
+        result = None
+
+        def runner():
+            nonlocal result
+            result = asyncio.run(_inner())
+
+        t = threading.Thread(target=runner)
+        t.start()
+        t.join()
+        return result
+
+    def get_grouped_base_stats(self, offset_sec=86400):
+        # group by platform_id
+        async def _inner():
+            async with self.get_db() as session:
+                session: AsyncSession
+                now = datetime.now()
+                start_time = now - timedelta(seconds=offset_sec)
+                result = await session.execute(
+                    select(PlatformStat.platform_id, func.sum(PlatformStat.count))
+                    .where(PlatformStat.timestamp >= start_time)
+                    .group_by(PlatformStat.platform_id),
+                )
+                grouped_stats = result.all()
+                deprecated_stats = DeprecatedStats()
+                for platform_id, count in grouped_stats:
+                    deprecated_stats.platform.append(
+                        DeprecatedPlatformStat(
+                            name=platform_id,
+                            count=count,
+                            timestamp=int(start_time.timestamp()),
+                        ),
+                    )
+                return deprecated_stats
+
+        result = None
+
+        def runner():
+            nonlocal result
+            result = asyncio.run(_inner())
+
+        t = threading.Thread(target=runner)
+        t.start()
+        t.join()
+        return result
