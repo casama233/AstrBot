@@ -196,7 +196,7 @@ class AstrBotConfigManager:
             {},
             scope="global",
             scope_id="global",
-        )
+        ) or {}
         if conf_id not in abconf_data:
             logger.warning(f"配置文件 {conf_id} 不存在于映射中")
             return False
@@ -247,7 +247,7 @@ class AstrBotConfigManager:
             {},
             scope="global",
             scope_id="global",
-        )
+        ) or {}
         if conf_id not in abconf_data:
             logger.warning(f"配置文件 {conf_id} 不存在于映射中")
             return False
