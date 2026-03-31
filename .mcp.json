@@ -1,9 +1,0 @@
-{
-  "exa": {
-    "command": "npx",
-    "args": ["exa-mcp-server"],
-    "env": {
-      "EXA_API_KEY": "REDACTED_EXA_KEY"
-    }
-  }
-}
