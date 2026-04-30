@@ -115,7 +115,7 @@
               <v-col cols="4">
                 <div class="d-flex flex-column">
                   <span class="text-caption font-weight-medium">{{ getTemplateTitle(template, templateKey) }}</span>
-                  <span v-if="template.hint" class="text-caption text-grey" style="font-size: 0.7rem;">{{ translateIfKey(template.hint) }}</span>
+                  <span v-if="template.hint" class="text-caption text-grey" style="font-size: 0.7rem;">{{ resolveTemplateText(templateKey, 'hint', template.hint) }}</span>
                 </div>
               </v-col>
               <v-col cols="7" class="pl-2 d-flex align-center justify-end">
@@ -223,9 +223,11 @@
 import { ref, computed, watch } from 'vue'
 import { useI18n, useModuleI18n } from '@/i18n/composables'
 import { useToast } from '@/utils/toast'
+import { usePluginI18n } from '@/utils/pluginI18n'
 
 const { t } = useI18n()
 const { tm, getRaw } = useModuleI18n('features/config-metadata')
+const { configText } = usePluginI18n()
 const { warning: toastWarning } = useToast()
 
 const props = defineProps({
@@ -236,6 +238,18 @@ const props = defineProps({
   itemMeta: {
     type: Object,
     default: null
+  },
+  pluginName: {
+    type: String,
+    default: ''
+  },
+  pluginI18n: {
+    type: Object,
+    default: () => ({})
+  },
+  configKey: {
+    type: String,
+    default: ''
   },
   buttonText: {
     type: String,
@@ -521,7 +535,15 @@ function translateIfKey(value) {
 }
 
 function getTemplateTitle(template, templateKey) {
-  return translateIfKey(template?.name || template?.description || templateKey)
+  return resolveTemplateText(templateKey, 'name', template?.name || template?.description || templateKey)
+}
+
+function resolveTemplateText(templateKey, attr, fallback) {
+  const fallbackText = translateIfKey(fallback) || ''
+  if (!props.pluginName || !props.configKey || !props.pluginI18n || Object.keys(props.pluginI18n).length === 0) {
+    return fallbackText
+  }
+  return configText(props.pluginI18n, `${props.configKey}.template_schema.${templateKey}`, attr, fallbackText)
 }
 </script>
 
@@ -538,4 +560,3 @@ function getTemplateTitle(template, templateKey) {
   opacity: 0.8;
 }
 </style>
-
