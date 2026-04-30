@@ -784,6 +784,14 @@
   content: "\F03F6";
 }
 
+.mdi-pin::before {
+  content: "\F0403";
+}
+
+.mdi-pin-outline::before {
+  content: "\F0931";
+}
+
 .mdi-play::before {
   content: "\F040A";
 }
