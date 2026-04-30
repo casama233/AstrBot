@@ -1,37 +1,22 @@
 <template>
   <div class="skills-page">
     <v-container fluid class="pa-0" elevation="0">
-      <v-row class="d-flex justify-space-between align-center px-4 py-3 pb-4">
-        <div>
-          <v-btn
-            v-if="mode === 'local'"
-            color="primary"
-            prepend-icon="mdi-upload"
-            class="me-2"
-            variant="tonal"
-            @click="openUploadDialog"
-          >
-            {{ tm("skills.upload") }}
-          </v-btn>
-          <v-btn
-            color="primary"
-            prepend-icon="mdi-refresh"
-            variant="tonal"
-            @click="refreshCurrentMode"
-          >
-            {{ tm("skills.refresh") }}
-          </v-btn>
-        </div>
-        <v-btn-toggle v-model="mode" mandatory divided density="comfortable">
+      <v-row
+        v-if="neoEnabled"
+        class="d-flex justify-end align-center px-4 py-3 pb-4"
+      >
+        <v-btn-toggle
+          v-model="mode"
+          mandatory
+          divided
+          density="comfortable"
+        >
           <v-btn value="local">{{ tm("skills.modeLocal") }}</v-btn>
-          <v-btn value="neo" :disabled="!neoEnabled">{{
-            tm("skills.modeNeo")
-          }}</v-btn>
+          <v-btn value="neo">{{ tm("skills.modeNeo") }}</v-btn>
         </v-btn-toggle>
       </v-row>
 
       <div v-if="mode === 'local'" class="px-2 pb-2 d-flex flex-column ga-2">
-        <small style="color: grey">{{ tm("skills.runtimeHint") }}</small>
         <v-alert
           v-if="runtime === 'sandbox' && !sandboxCache.ready"
           type="info"
@@ -67,67 +52,89 @@
           <small class="text-grey">{{ tm("skills.emptyHint") }}</small>
         </div>
 
-        <v-row v-else align="stretch">
-          <v-col
+        <div v-else class="skills-list pb-3">
+          <OutlinedActionListItem
             v-for="skill in skills"
             :key="skill.name"
-            cols="12"
-            md="6"
-            lg="4"
-            xl="3"
-            class="d-flex"
+            :title="skill.name"
           >
-            <item-card
-              :item="skill"
-              title-field="name"
-              enabled-field="active"
-              :loading="itemLoading[skill.name] || false"
-              :show-edit-button="false"
-              :disable-toggle="isSandboxPresetSkill(skill)"
-              :disable-delete="isSandboxPresetSkill(skill)"
-              @toggle-enabled="toggleSkill"
-              @delete="confirmDelete"
-            >
-              <template #item-details="{ item }">
-                <div class="d-flex align-center mb-2 ga-2 flex-wrap">
-                  <v-chip
-                    size="x-small"
-                    variant="tonal"
-                    :color="sourceTypeColor(item.source_type)"
-                  >
-                    {{ sourceTypeLabel(item.source_type) }}
-                  </v-chip>
-                  <div
-                    class="text-caption text-medium-emphasis skill-description"
-                  >
-                    <v-icon size="small" class="me-1">mdi-text</v-icon>
-                    {{ item.description || tm("skills.noDescription") }}
-                  </div>
-                </div>
-                <div class="text-caption text-medium-emphasis skill-path">
-                  <v-icon size="small" class="me-1">mdi-file-document</v-icon>
-                  {{ tm("skills.path") }}: {{ item.path }}
-                </div>
-              </template>
-              <template #actions="{ item }">
-                <v-btn
-                  variant="tonal"
-                  color="primary"
-                  size="small"
-                  rounded="xl"
-                  :disabled="
-                    itemLoading[item.name] ||
-                    false ||
-                    isSandboxPresetSkill(item)
-                  "
-                  @click="downloadSkill(item)"
-                >
-                  {{ tm("skills.download") }}
-                </v-btn>
-              </template>
-            </item-card>
-          </v-col>
-        </v-row>
+            <template #title-extra>
+              <v-chip
+                size="x-small"
+                variant="tonal"
+                :color="sourceTypeColor(skill.source_type)"
+              >
+                {{ sourceTypeLabel(skill.source_type) }}
+              </v-chip>
+            </template>
+
+            <div class="skill-description text-body-2 text-medium-emphasis">
+              {{ skill.description || tm("skills.noDescription") }}
+            </div>
+
+            <div class="skill-path text-caption text-medium-emphasis">
+              <v-icon size="small" class="me-1">mdi-file-document</v-icon>
+              {{ tm("skills.path") }}: {{ skill.path }}
+            </div>
+
+            <template #actions>
+              <v-tooltip :text="tm('skills.download')" location="top">
+                <template #activator="{ props }">
+                  <v-btn
+                    v-bind="props"
+                    icon="mdi-download-outline"
+                    variant="text"
+                    size="small"
+                    class="list-action-icon-btn"
+                    :disabled="
+                      itemLoading[skill.name] ||
+                      false ||
+                      isSandboxPresetSkill(skill)
+                    "
+                    @click="downloadSkill(skill)"
+                  />
+                </template>
+              </v-tooltip>
+
+              <v-tooltip :text="t('core.common.itemCard.delete')" location="top">
+                <template #activator="{ props }">
+                  <v-btn
+                    v-bind="props"
+                    icon="mdi-delete-outline"
+                    variant="text"
+                    size="small"
+                    class="list-action-icon-btn"
+                    :disabled="itemLoading[skill.name] || isSandboxPresetSkill(skill)"
+                    @click="confirmDelete(skill)"
+                  />
+                </template>
+              </v-tooltip>
+            </template>
+
+            <template #control>
+              <v-tooltip location="top">
+                <template #activator="{ props }">
+                  <v-switch
+                    v-bind="props"
+                    color="primary"
+                    density="compact"
+                    hide-details
+                    inset
+                    :model-value="skill.active"
+                    :loading="itemLoading[skill.name] || false"
+                    :disabled="itemLoading[skill.name] || isSandboxPresetSkill(skill)"
+                    @update:model-value="toggleSkill(skill)"
+                  />
+                </template>
+                <span>{{
+                  skill.active
+                    ? t("core.common.itemCard.enabled")
+                    : t("core.common.itemCard.disabled")
+                }}</span>
+              </v-tooltip>
+            </template>
+          </OutlinedActionListItem>
+        </div>
       </template>
 
       <template v-else-if="mode === 'neo' && neoEnabled">
@@ -141,14 +148,6 @@
                 {{ tm("skills.neoFilterHint") }}
               </div>
             </div>
-            <v-btn
-              color="primary"
-              prepend-icon="mdi-refresh"
-              variant="flat"
-              @click="fetchNeoData"
-            >
-              {{ tm("skills.refresh") }}
-            </v-btn>
           </div>
 
           <v-row class="ga-md-0 ga-2">
@@ -338,6 +337,39 @@
         </v-card>
       </template>
     </v-container>
+
+    <div class="skills-fab-stack">
+      <v-tooltip :text="tm('skills.refresh')" location="left">
+        <template #activator="{ props }">
+          <v-btn
+            v-bind="props"
+            color="darkprimary"
+            icon="mdi-refresh"
+            size="x-large"
+            variant="elevated"
+            class="skills-fab"
+            @click="refreshCurrentMode"
+          />
+        </template>
+      </v-tooltip>
+      <v-tooltip
+        v-if="mode === 'local'"
+        :text="tm('skills.upload')"
+        location="left"
+      >
+        <template #activator="{ props }">
+          <v-btn
+            v-bind="props"
+            color="darkprimary"
+            icon="mdi-upload"
+            size="x-large"
+            variant="elevated"
+            class="skills-fab"
+            @click="openUploadDialog"
+          />
+        </template>
+      </v-tooltip>
+    </div>
 
     <v-dialog v-model="uploadDialog" max-width="880px" :persistent="uploading">
       <v-card class="skills-upload-dialog">
@@ -589,8 +621,8 @@
 <script>
 import axios from "axios";
 import { computed, onMounted, reactive, ref, watch } from "vue";
-import ItemCard from "@/components/shared/ItemCard.vue";
 import { useI18n, useModuleI18n } from "@/i18n/composables";
+import OutlinedActionListItem from "@/components/shared/OutlinedActionListItem.vue";
 
 const STATUS_WAITING = "waiting";
 const STATUS_UPLOADING = "uploading";
@@ -600,7 +632,7 @@ const STATUS_SKIPPED = "skipped";
 
 export default {
   name: "SkillsSection",
-  components: { ItemCard },
+  components: { OutlinedActionListItem },
   setup() {
     const { t } = useI18n();
     const { tm } = useModuleI18n("features/extension");
@@ -1448,20 +1480,56 @@ export default {
 </script>
 
 <style scoped>
+.skills-list {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.list-action-icon-btn {
+  color: rgba(var(--v-theme-on-surface), 0.78);
+}
+
+.list-action-icon-btn:hover {
+  background: rgba(var(--v-theme-on-surface), 0.08);
+  color: rgb(var(--v-theme-on-surface));
+}
+
+.skills-fab-stack {
+  align-items: center;
+  bottom: 52px;
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+  position: fixed;
+  right: 52px;
+  z-index: 10000;
+}
+
+.skills-fab {
+  border-radius: 16px;
+  box-shadow: 0 4px 6px rgba(0, 0, 0, 0.1);
+  transition: all 0.3s cubic-bezier(0.25, 0.8, 0.25, 1);
+}
+
+.skills-fab:hover {
+  box-shadow: 0 12px 20px rgba(var(--v-theme-primary), 0.4);
+  transform: translateY(-4px) scale(1.05);
+}
+
 .skill-description {
   display: -webkit-box;
   -webkit-line-clamp: 1;
   -webkit-box-orient: vertical;
   overflow: hidden;
-  min-height: 20px;
 }
 
 .skill-path {
   display: -webkit-box;
-  -webkit-line-clamp: 2;
+  -webkit-line-clamp: 1;
   -webkit-box-orient: vertical;
+  margin-top: 6px;
   overflow: hidden;
-  min-height: 40px;
   word-break: break-all;
 }
 
