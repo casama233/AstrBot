@@ -1,4 +1,4 @@
-/* Auto-generated MDI subset – 258 icons */
+/* Auto-generated MDI subset – 257 icons */
 /* Do not edit manually. Run: pnpm run subset-icons */
 
 @font-face {
@@ -138,10 +138,6 @@
 
 .mdi-calendar-edit::before {
   content: "\F08A7";
-}
-
-.mdi-calendar-multiple::before {
-  content: "\F00F1";
 }
 
 .mdi-calendar-plus::before {
