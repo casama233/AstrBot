@@ -12,6 +12,8 @@
           v-for="server in mcpServers || []"
           :key="server.name"
           :title="server.name"
+          clickable
+          @click="editServer(server)"
         >
           <div
             class="mcp-server-config text-body-2 text-medium-emphasis"
@@ -33,6 +35,7 @@
                     v-bind="listToolsProps"
                     class="mcp-server-tools__button"
                     type="button"
+                    @click.stop
                   >
                     <v-icon size="small" class="me-1">mdi-tools</v-icon>
                     {{
@@ -81,19 +84,6 @@
           </div>
 
           <template #actions>
-            <v-tooltip :text="t('core.common.itemCard.edit')" location="top">
-              <template #activator="{ props }">
-                <v-btn
-                  v-bind="props"
-                  icon="mdi-pencil-outline"
-                  variant="text"
-                  size="small"
-                  class="list-action-icon-btn"
-                  @click="editServer(server)"
-                />
-              </template>
-            </v-tooltip>
-
             <v-tooltip :text="t('core.common.itemCard.delete')" location="top">
               <template #activator="{ props }">
                 <v-btn
@@ -102,7 +92,7 @@
                   variant="text"
                   size="small"
                   class="list-action-icon-btn"
-                  @click="deleteServer(server)"
+                  @click.stop="deleteServer(server)"
                 />
               </template>
             </v-tooltip>
@@ -127,6 +117,7 @@
                   :model-value="server.active"
                   :loading="mcpServerUpdateLoaders[server.name] || false"
                   :disabled="mcpServerUpdateLoaders[server.name] || false"
+                  @click.stop
                   @update:model-value="updateServerStatus(server)"
                 />
               </template>
@@ -655,7 +646,7 @@ export default {
 .mcp-server-list {
   display: flex;
   flex-direction: column;
-  gap: 10px;
+  gap: 12px;
 }
 
 .mcp-server-config {

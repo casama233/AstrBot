@@ -1,8 +1,15 @@
 <template>
-  <v-card class="outlined-action-list-item rounded-lg" variant="outlined">
+  <v-card
+    class="outlined-action-list-item rounded-lg"
+    :class="{ 'outlined-action-list-item--clickable': clickable }"
+    variant="outlined"
+    :ripple="false"
+    @click="handleClick"
+  >
     <div class="outlined-action-list-item__main">
       <div class="outlined-action-list-item__content">
         <div class="outlined-action-list-item__header">
+          <slot name="title-prepend"></slot>
           <div class="outlined-action-list-item__title">
             {{ title }}
           </div>
@@ -30,17 +37,43 @@
 </template>
 
 <script setup>
-defineProps({
+const props = defineProps({
   title: {
     type: String,
     required: true,
   },
+  clickable: {
+    type: Boolean,
+    default: false,
+  },
 });
+
+const emit = defineEmits(["click"]);
+
+const handleClick = (event) => {
+  if (!props.clickable) return;
+  emit("click", event);
+};
 </script>
 
 <style scoped>
 .outlined-action-list-item {
   background: rgb(var(--v-theme-surface));
+  transition: background-color 0.16s ease;
+}
+
+.outlined-action-list-item:hover,
+.outlined-action-list-item:focus-within {
+  background: rgba(var(--v-theme-on-surface), 0.04);
+}
+
+.outlined-action-list-item--clickable {
+  cursor: pointer;
+}
+
+.outlined-action-list-item :deep(.v-card__overlay),
+.outlined-action-list-item :deep(.v-ripple__container) {
+  display: none;
 }
 
 .outlined-action-list-item__main {

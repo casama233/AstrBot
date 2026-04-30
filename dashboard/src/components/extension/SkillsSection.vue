@@ -57,6 +57,8 @@
             v-for="skill in skills"
             :key="skill.name"
             :title="skill.name"
+            clickable
+            @click="openSkillEditor(skill)"
           >
             <template #title-extra>
               <v-chip
@@ -91,7 +93,7 @@
                       false ||
                       isSandboxPresetSkill(skill)
                     "
-                    @click="downloadSkill(skill)"
+                    @click.stop="downloadSkill(skill)"
                   />
                 </template>
               </v-tooltip>
@@ -105,7 +107,7 @@
                     size="small"
                     class="list-action-icon-btn"
                     :disabled="itemLoading[skill.name] || isSandboxPresetSkill(skill)"
-                    @click="confirmDelete(skill)"
+                    @click.stop="confirmDelete(skill)"
                   />
                 </template>
               </v-tooltip>
@@ -123,6 +125,7 @@
                     :model-value="skill.active"
                     :loading="itemLoading[skill.name] || false"
                     :disabled="itemLoading[skill.name] || isSandboxPresetSkill(skill)"
+                    @click.stop
                     @update:model-value="toggleSkill(skill)"
                   />
                 </template>
@@ -593,6 +596,142 @@
       </v-card>
     </v-dialog>
 
+    <v-dialog
+      v-model="editorDialog.show"
+      max-width="1180px"
+      :persistent="editorDialog.saving"
+    >
+      <v-card class="skill-editor-dialog">
+        <v-card-title class="skill-editor-dialog__header">
+          <div>
+            <div class="text-h3 font-weight-bold">
+              {{ editorDialog.skillName }}
+            </div>
+          </div>
+          <v-btn
+            icon="mdi-close"
+            variant="text"
+            :disabled="editorDialog.saving"
+            @click="closeSkillEditor"
+          />
+        </v-card-title>
+
+        <v-card-text class="skill-editor-dialog__body">
+          <div class="skill-editor">
+            <div class="skill-editor__files">
+              <div class="skill-editor__files-header">
+                <v-btn
+                  icon="mdi-arrow-up"
+                  size="small"
+                  variant="text"
+                  :disabled="!editorDialog.currentDir || editorDialog.loadingFiles"
+                  @click="openParentSkillDir"
+                />
+                <span>{{ editorDialog.currentDir || "/" }}</span>
+              </div>
+
+              <v-progress-linear
+                v-if="editorDialog.loadingFiles"
+                indeterminate
+                color="primary"
+              />
+
+              <div v-else class="skill-editor__file-list">
+                <button
+                  v-for="entry in editorDialog.entries"
+                  :key="`${entry.type}:${entry.path}`"
+                  class="skill-editor__file-row"
+                  :class="{
+                    'skill-editor__file-row--active':
+                      editorDialog.filePath === entry.path,
+                  }"
+                  type="button"
+                  @click="openSkillEntry(entry)"
+                >
+                  <v-icon size="18">
+                    {{
+                      entry.type === "directory"
+                        ? "mdi-folder-outline"
+                        : "mdi-file-document-outline"
+                    }}
+                  </v-icon>
+                  <span>{{ entry.name }}</span>
+                  <v-chip
+                    v-if="entry.type === 'file' && !entry.editable"
+                    size="x-small"
+                    variant="tonal"
+                  >
+                    {{ tm("skills.readonly") }}
+                  </v-chip>
+                </button>
+              </div>
+            </div>
+
+            <div class="skill-editor__content">
+              <div class="skill-editor__content-header">
+                <div class="skill-editor__path">
+                  {{ editorDialog.filePath || tm("skills.noFileSelected") }}
+                </div>
+                <v-chip
+                  v-if="editorDialog.fileDirty"
+                  size="small"
+                  color="warning"
+                  variant="tonal"
+                >
+                  {{ tm("skills.unsaved") }}
+                </v-chip>
+              </div>
+
+              <v-alert
+                v-if="editorDialog.error"
+                type="error"
+                variant="tonal"
+                density="compact"
+                class="mb-3"
+              >
+                {{ editorDialog.error }}
+              </v-alert>
+
+              <div class="skill-editor__monaco">
+                <VueMonacoEditor
+                  v-model:value="editorDialog.content"
+                  :theme="editorTheme"
+                  :language="editorLanguage"
+                  :options="editorOptions"
+                  style="height: 100%; width: 100%;"
+                  @change="editorDialog.fileDirty = true"
+                />
+              </div>
+            </div>
+          </div>
+        </v-card-text>
+
+        <v-card-actions class="skill-editor-dialog__actions">
+          <v-spacer />
+          <v-btn
+            variant="text"
+            :disabled="editorDialog.saving"
+            @click="closeSkillEditor"
+          >
+            {{ tm("skills.cancel") }}
+          </v-btn>
+          <v-btn
+            color="primary"
+            variant="flat"
+            :loading="editorDialog.saving"
+            :disabled="
+              !editorDialog.filePath ||
+              !editorDialog.fileEditable ||
+              !editorDialog.fileDirty
+            "
+            @click="saveSkillFile"
+          >
+            {{ tm("skills.saveFile") }}
+          </v-btn>
+        </v-card-actions>
+      </v-card>
+    </v-dialog>
+
     <v-dialog v-model="payloadDialog.show" max-width="820px">
       <v-card>
         <v-card-title>{{ tm("skills.neoPayloadTitle") }}</v-card-title>
@@ -620,9 +759,11 @@
 
 <script>
 import axios from "axios";
-import { computed, onMounted, reactive, ref, watch } from "vue";
+import { computed, nextTick, onMounted, reactive, ref, watch } from "vue";
+import { VueMonacoEditor } from "@guolao/vue-monaco-editor";
 import { useI18n, useModuleI18n } from "@/i18n/composables";
 import OutlinedActionListItem from "@/components/shared/OutlinedActionListItem.vue";
+import { useCustomizerStore } from "@/stores/customizer";
 
 const STATUS_WAITING = "waiting";
 const STATUS_UPLOADING = "uploading";
@@ -632,10 +773,11 @@ const STATUS_SKIPPED = "skipped";
 
 export default {
   name: "SkillsSection",
-  components: { OutlinedActionListItem },
+  components: { OutlinedActionListItem, VueMonacoEditor },
   setup() {
     const { t } = useI18n();
     const { tm } = useModuleI18n("features/extension");
+    const customizer = useCustomizerStore();
 
     const mode = ref("local");
     const skills = ref([]);
@@ -666,6 +808,20 @@ export default {
       show: false,
       content: "",
     });
+    const editorDialog = reactive({
+      show: false,
+      skillName: "",
+      currentDir: "",
+      entries: [],
+      filePath: "",
+      content: "",
+      fileEditable: false,
+      fileDirty: false,
+      loadingFiles: false,
+      loadingFile: false,
+      saving: false,
+      error: "",
+    });
 
     const neoEnabled = ref(false);
     const neoUnavailableMessage = ref("");
@@ -691,6 +847,33 @@ export default {
     const activeReleaseCount = computed(
       () => neoReleases.value.filter((item) => item?.is_active).length,
     );
+    const editorLanguage = computed(() => {
+      const path = String(editorDialog.filePath || "").toLowerCase();
+      if (path.endsWith(".json")) return "json";
+      if (path.endsWith(".yaml") || path.endsWith(".yml")) return "yaml";
+      if (path.endsWith(".toml") || path.endsWith(".ini")) return "ini";
+      if (path.endsWith(".py")) return "python";
+      if (path.endsWith(".js")) return "javascript";
+      if (path.endsWith(".ts")) return "typescript";
+      if (path.endsWith(".html")) return "html";
+      if (path.endsWith(".css")) return "css";
+      if (path.endsWith(".sh")) return "shell";
+      if (path.endsWith(".md") || path.endsWith(".txt")) return "markdown";
+      return "plaintext";
+    });
+    const editorTheme = computed(() =>
+      customizer.uiTheme === "PurpleThemeDark" ? "vs-dark" : "vs-light",
+    );
+    const editorOptions = computed(() => ({
+      automaticLayout: true,
+      fontSize: 13,
+      lineNumbers: "on",
+      minimap: { enabled: false },
+      readOnly: !editorDialog.fileEditable || editorDialog.loadingFile,
+      scrollBeyondLastLine: false,
+      tabSize: 2,
+      wordWrap: "on",
+    }));
     const uploadStateCounts = computed(() =>
       uploadItems.value.reduce(
         (counts, item) => {
@@ -1137,6 +1320,167 @@ export default {
       }
     };
 
+    const resetEditorDialog = () => {
+      editorDialog.skillName = "";
+      editorDialog.currentDir = "";
+      editorDialog.entries = [];
+      editorDialog.filePath = "";
+      editorDialog.content = "";
+      editorDialog.fileEditable = false;
+      editorDialog.fileDirty = false;
+      editorDialog.loadingFiles = false;
+      editorDialog.loadingFile = false;
+      editorDialog.saving = false;
+      editorDialog.error = "";
+    };
+
+    const loadSkillDir = async (path = "") => {
+      if (!editorDialog.skillName) return [];
+      editorDialog.loadingFiles = true;
+      editorDialog.error = "";
+      try {
+        const res = await axios.get("/api/skills/files", {
+          params: { name: editorDialog.skillName, path },
+        });
+        if (res?.data?.status !== "ok") {
+          editorDialog.error =
+            res?.data?.message || tm("skills.editorLoadFailed");
+          return [];
+        }
+        const payload = res.data.data || {};
+        editorDialog.currentDir = payload.path || "";
+        editorDialog.entries = Array.isArray(payload.entries)
+          ? payload.entries
+          : [];
+        return editorDialog.entries;
+      } catch (_err) {
+        editorDialog.error = tm("skills.editorLoadFailed");
+        return [];
+      } finally {
+        editorDialog.loadingFiles = false;
+      }
+    };
+
+    const loadSkillFile = async (path) => {
+      if (!editorDialog.skillName || !path) return;
+      if (
+        editorDialog.fileDirty &&
+        !window.confirm(tm("skills.discardChanges"))
+      ) {
+        return;
+      }
+      editorDialog.loadingFile = true;
+      editorDialog.error = "";
+      try {
+        const res = await axios.get("/api/skills/file", {
+          params: { name: editorDialog.skillName, path },
+        });
+        if (res?.data?.status !== "ok") {
+          editorDialog.error =
+            res?.data?.message || tm("skills.editorLoadFailed");
+          return;
+        }
+        const payload = res.data.data || {};
+        editorDialog.filePath = payload.path || path;
+        editorDialog.content = payload.content || "";
+        editorDialog.fileEditable = payload.editable !== false;
+        await nextTick();
+        editorDialog.fileDirty = false;
+      } catch (_err) {
+        editorDialog.error = tm("skills.editorLoadFailed");
+      } finally {
+        editorDialog.loadingFile = false;
+      }
+    };
+
+    const openSkillEditor = async (skill) => {
+      if (isSandboxPresetSkill(skill)) {
+        showMessage(tm("skills.sandboxPresetReadonly"), "warning");
+        return;
+      }
+      resetEditorDialog();
+      editorDialog.skillName = skill.name;
+      editorDialog.show = true;
+      const entries = await loadSkillDir("");
+      const skillMd = entries.find((entry) => entry.path === "SKILL.md");
+      if (skillMd?.editable) {
+        await loadSkillFile(skillMd.path);
+      }
+    };
+
+    const closeSkillEditor = () => {
+      if (editorDialog.saving) return;
+      if (
+        editorDialog.fileDirty &&
+        !window.confirm(tm("skills.discardChanges"))
+      ) {
+        return;
+      }
+      editorDialog.show = false;
+      resetEditorDialog();
+    };
+
+    const openSkillEntry = async (entry) => {
+      if (!entry) return;
+      if (entry.type === "directory") {
+        if (
+          editorDialog.fileDirty &&
+          !window.confirm(tm("skills.discardChanges"))
+        ) {
+          return;
+        }
+        await loadSkillDir(entry.path);
+        return;
+      }
+      await loadSkillFile(entry.path);
+    };
+
+    const openParentSkillDir = async () => {
+      if (!editorDialog.currentDir) return;
+      if (
+        editorDialog.fileDirty &&
+        !window.confirm(tm("skills.discardChanges"))
+      ) {
+        return;
+      }
+      const parts = editorDialog.currentDir.split("/").filter(Boolean);
+      parts.pop();
+      await loadSkillDir(parts.join("/"));
+    };
+
+    const saveSkillFile = async () => {
+      if (
+        !editorDialog.skillName ||
+        !editorDialog.filePath ||
+        !editorDialog.fileEditable
+      ) {
+        return;
+      }
+      editorDialog.saving = true;
+      editorDialog.error = "";
+      try {
+        const res = await axios.post("/api/skills/file", {
+          name: editorDialog.skillName,
+          path: editorDialog.filePath,
+          content: editorDialog.content,
+        });
+        if (res?.data?.status !== "ok") {
+          editorDialog.error =
+            res?.data?.message || tm("skills.editorSaveFailed");
+          showMessage(editorDialog.error, "error");
+          return;
+        }
+        editorDialog.fileDirty = false;
+        showMessage(tm("skills.editorSaveSuccess"), "success");
+        await fetchSkills();
+      } catch (_err) {
+        editorDialog.error = tm("skills.editorSaveFailed");
+        showMessage(tm("skills.editorSaveFailed"), "error");
+      } finally {
+        editorDialog.saving = false;
+      }
+    };
+
     const fetchNeoCandidates = async () => {
       const params = {
         skill_key: neoFilters.skill_key || undefined,
@@ -1444,6 +1788,10 @@ export default {
       candidateHeaders,
       releaseHeaders,
       payloadDialog,
+      editorDialog,
+      editorLanguage,
+      editorTheme,
+      editorOptions,
       formatFileSize,
       uploadStatusLabel,
       statusChipClass,
@@ -1457,6 +1805,11 @@ export default {
       fetchNeoData,
       uploadSkillBatch,
       downloadSkill,
+      openSkillEditor,
+      closeSkillEditor,
+      openSkillEntry,
+      openParentSkillDir,
+      saveSkillFile,
       toggleSkill,
       confirmDelete,
       deleteSkill,
@@ -1483,7 +1836,7 @@ export default {
 .skills-list {
   display: flex;
   flex-direction: column;
-  gap: 10px;
+  gap: 12px;
 }
 
 .list-action-icon-btn {
@@ -1531,6 +1884,125 @@ export default {
   margin-top: 6px;
   overflow: hidden;
   word-break: break-all;
+}
+
+.skill-editor-dialog {
+  max-height: min(88vh, 980px);
+  overflow: hidden;
+}
+
+.skill-editor-dialog__header {
+  align-items: flex-start;
+  display: flex;
+  justify-content: space-between;
+  gap: 16px;
+  padding: 18px 22px 14px;
+}
+
+.skill-editor-dialog__body {
+  min-height: 0;
+  padding: 16px 22px;
+}
+
+.skill-editor-dialog__actions {
+  border-top: 1px solid var(--v-theme-border);
+  padding: 12px 22px;
+}
+
+.skill-editor {
+  display: grid;
+  grid-template-columns: minmax(220px, 280px) minmax(0, 1fr);
+  gap: 16px;
+  min-height: 560px;
+}
+
+.skill-editor__files {
+  border: 1px solid rgba(128, 128, 128, 0.28);
+  border-radius: 10px;
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+  overflow: hidden;
+}
+
+.skill-editor__files-header {
+  align-items: center;
+  border-bottom: 1px solid rgba(128, 128, 128, 0.28);
+  display: flex;
+  gap: 8px;
+  min-height: 44px;
+  padding: 6px 10px;
+}
+
+.skill-editor__files-header span {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.skill-editor__file-list {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  overflow-y: auto;
+  padding: 6px;
+}
+
+.skill-editor__file-row {
+  align-items: center;
+  border-radius: 8px;
+  color: rgb(var(--v-theme-on-surface));
+  display: grid;
+  gap: 8px;
+  grid-template-columns: auto minmax(0, 1fr) auto;
+  min-height: 34px;
+  padding: 6px 8px;
+  text-align: left;
+}
+
+.skill-editor__file-row:hover,
+.skill-editor__file-row--active {
+  background: rgba(var(--v-theme-on-surface), 0.06);
+}
+
+.skill-editor__file-row--active {
+  background: rgba(var(--v-theme-on-surface), 0.1);
+}
+
+.skill-editor__file-row span {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.skill-editor__content {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+}
+
+.skill-editor__content-header {
+  align-items: center;
+  display: flex;
+  gap: 10px;
+  justify-content: space-between;
+  min-height: 34px;
+}
+
+.skill-editor__path {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.skill-editor__monaco {
+  border: 1px solid rgba(128, 128, 128, 0.28);
+  border-radius: 10px;
+  flex: 1 1 auto;
+  margin-top: 12px;
+  min-height: 520px;
+  overflow: hidden;
+  position: relative;
 }
 
 .skills-upload-dialog {
