@@ -159,8 +159,8 @@
 <script setup>
 import { computed, ref, watch } from 'vue'
 import ConfigItemRenderer from './ConfigItemRenderer.vue'
-import { useI18n, useModuleI18n } from '@/i18n/composables'
-import { usePluginI18n } from '@/utils/pluginI18n'
+import { useI18n } from '@/i18n/composables'
+import { useConfigTextResolver } from '@/composables/useConfigTextResolver'
 
 const props = defineProps({
   modelValue: {
@@ -187,8 +187,7 @@ const props = defineProps({
 
 const emit = defineEmits(['update:modelValue'])
 const { t } = useI18n()
-const { tm, getRaw } = useModuleI18n('features/config-metadata')
-const { configText } = usePluginI18n()
+const { resolveConfigText } = useConfigTextResolver(props)
 
 const expandedEntries = ref({})
 
@@ -227,25 +226,12 @@ function templateItemPath(templateKey, itemPath) {
   return `${templatePath(templateKey)}.${itemPath}`
 }
 
-function resolveConfigText(path, attr, fallback) {
-  const fallbackText = translateIfKey(fallback) || ''
-  if (!props.pluginName || !props.pluginI18n || Object.keys(props.pluginI18n).length === 0) {
-    return fallbackText
-  }
-  return configText(props.pluginI18n, path, attr, fallbackText)
-}
-
 function templateText(templateKey, attr, fallback) {
   return resolveConfigText(templatePath(templateKey), attr, fallback)
 }
 
 function templateItemText(templateKey, itemPath, attr, fallback) {
   return resolveConfigText(templateItemPath(templateKey, itemPath), attr, fallback)
-}
-
-function translateIfKey(value) {
-  if (!value || typeof value !== 'string') return value
-  return getRaw(value) ? tm(value) : value
 }
 
 function buildDefaults(itemsMeta = {}) {

@@ -22,7 +22,7 @@ function getByPath(source, key) {
 export function resolvePluginI18n(i18n, locale, key, fallback = '') {
   const localeData = getLocaleData(i18n, locale)
   const value = getByPath(localeData, key)
-  return value === undefined || value === null || value === '' ? fallback : value
+  return value === undefined || value === null ? fallback : value
 }
 
 export function usePluginI18n() {

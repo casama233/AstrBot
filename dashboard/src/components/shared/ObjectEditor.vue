@@ -221,13 +221,11 @@
 
 <script setup>
 import { ref, computed, watch } from 'vue'
-import { useI18n, useModuleI18n } from '@/i18n/composables'
+import { useI18n } from '@/i18n/composables'
 import { useToast } from '@/utils/toast'
-import { usePluginI18n } from '@/utils/pluginI18n'
+import { useConfigTextResolver } from '@/composables/useConfigTextResolver'
 
 const { t } = useI18n()
-const { tm, getRaw } = useModuleI18n('features/config-metadata')
-const { configText } = usePluginI18n()
 const { warning: toastWarning } = useToast()
 
 const props = defineProps({
@@ -264,6 +262,8 @@ const props = defineProps({
     default: 1
   }
 })
+
+const { translateIfKey, resolveConfigText } = useConfigTextResolver(props)
 
 const emit = defineEmits(['update:modelValue'])
 
@@ -529,21 +529,15 @@ function cancelDialog() {
   dialog.value = false
 }
 
-function translateIfKey(value) {
-  if (!value || typeof value !== 'string') return value
-  return getRaw(value) ? tm(value) : value
-}
-
 function getTemplateTitle(template, templateKey) {
   return resolveTemplateText(templateKey, 'name', template?.name || template?.description || templateKey)
 }
 
 function resolveTemplateText(templateKey, attr, fallback) {
-  const fallbackText = translateIfKey(fallback) || ''
-  if (!props.pluginName || !props.configKey || !props.pluginI18n || Object.keys(props.pluginI18n).length === 0) {
-    return fallbackText
+  if (!props.configKey) {
+    return translateIfKey(fallback) || ''
   }
-  return configText(props.pluginI18n, `${props.configKey}.template_schema.${templateKey}`, attr, fallbackText)
+  return resolveConfigText(`${props.configKey}.template_schema.${templateKey}`, attr, fallback)
 }
 </script>
 
