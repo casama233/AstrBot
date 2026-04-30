@@ -42,6 +42,7 @@ const props = defineProps({
 const { t } = useI18n()
 const { getRaw } = useModuleI18n('features/config-metadata')
 const { translateIfKey, resolveConfigText } = useConfigTextResolver(props)
+const currentConfigPath = computed(() => props.pathPrefix || props.metadataKey)
 
 const filteredIterable = computed(() => {
   if (!props.iterable) return {}
@@ -175,11 +176,11 @@ function hasVisibleItemsAfter(items, currentIndex) {
 <template>
   <div class="config-section" v-if="iterable && metadata[metadataKey]?.type === 'object'">
     <v-list-item-title class="config-title">
-      {{ resolveConfigText('', 'description', metadata[metadataKey]?.description) }} <span class="metadata-key">({{ metadataKey }})</span>
+      {{ resolveConfigText(currentConfigPath, 'description', metadata[metadataKey]?.description) }} <span class="metadata-key">({{ metadataKey }})</span>
     </v-list-item-title>
     <v-list-item-subtitle class="config-hint">
       <span v-if="metadata[metadataKey]?.obvious_hint && metadata[metadataKey]?.hint" class="important-hint">‼️</span>
-      {{ resolveConfigText('', 'hint', metadata[metadataKey]?.hint) }}
+      {{ resolveConfigText(currentConfigPath, 'hint', metadata[metadataKey]?.hint) }}
     </v-list-item-subtitle>
   </div>
 
