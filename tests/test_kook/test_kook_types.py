@@ -75,9 +75,7 @@ def test_all_kook_card_type():
             ),
             ImageGroupModule(
                 elements=[
-                    ImageElement(
-                        src="https://example.invalid/kook-fixture-02.bin"
-                    )
+                    ImageElement(src="https://example.invalid/kook-fixture-02.bin")
                 ]
             ),
             FileModule(

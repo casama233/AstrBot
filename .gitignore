@@ -65,3 +65,9 @@ GenieData/
 .worktrees/
 
 dashboard/bun.lock
+
+# Keep local runtime credentials and generated artifacts out of source control.
+/.mcp.json
+*.pyc
+*.pyo
+.coverage.*
